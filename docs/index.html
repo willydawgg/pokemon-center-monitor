@@ -1,0 +1,309 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Pokemon Center Monitor</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      background: #0f0f13;
+      color: #e0e0e0;
+      min-height: 100vh;
+    }
+
+    header {
+      background: #1a1a24;
+      border-bottom: 1px solid #2a2a3a;
+      padding: 16px 20px;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    header img {
+      width: 32px;
+      height: 32px;
+    }
+
+    header h1 {
+      font-size: 1.1rem;
+      font-weight: 600;
+      color: #fff;
+    }
+
+    header .refresh-btn {
+      margin-left: auto;
+      background: #2a2a3a;
+      border: 1px solid #3a3a4a;
+      color: #aaa;
+      padding: 6px 14px;
+      border-radius: 6px;
+      cursor: pointer;
+      font-size: 0.85rem;
+    }
+
+    header .refresh-btn:hover { background: #333344; color: #fff; }
+
+    .main { max-width: 640px; margin: 0 auto; padding: 20px 16px; }
+
+    /* Status card */
+    .status-card {
+      border-radius: 16px;
+      padding: 28px 24px;
+      text-align: center;
+      margin-bottom: 24px;
+      transition: background 0.4s;
+    }
+
+    .status-card.clear   { background: #0d2b1a; border: 2px solid #1a5c30; }
+    .status-card.queue   { background: #2b0d0d; border: 2px solid #8b1a1a; animation: pulse 1.5s infinite; }
+    .status-card.security{ background: #2b1f0d; border: 2px solid #8b5c1a; }
+    .status-card.warning { background: #1f1f0d; border: 2px solid #6b6b1a; }
+    .status-card.error   { background: #1a1a1a; border: 2px solid #444; }
+    .status-card.unknown { background: #1a1a24; border: 2px solid #2a2a3a; }
+
+    @keyframes pulse {
+      0%, 100% { box-shadow: 0 0 0 0 rgba(200, 30, 30, 0.4); }
+      50%       { box-shadow: 0 0 0 12px rgba(200, 30, 30, 0); }
+    }
+
+    .status-icon { font-size: 3rem; margin-bottom: 10px; }
+
+    .status-label {
+      font-size: 1.6rem;
+      font-weight: 700;
+      letter-spacing: 0.05em;
+      text-transform: uppercase;
+      margin-bottom: 8px;
+    }
+
+    .clear    .status-label { color: #4ade80; }
+    .queue    .status-label { color: #f87171; }
+    .security .status-label { color: #fb923c; }
+    .warning  .status-label { color: #facc15; }
+    .error    .status-label { color: #94a3b8; }
+    .unknown  .status-label { color: #64748b; }
+
+    .status-message {
+      font-size: 0.95rem;
+      color: #aaa;
+      margin-bottom: 12px;
+    }
+
+    .status-time {
+      font-size: 0.78rem;
+      color: #666;
+    }
+
+    /* Alerts badges */
+    .alerts {
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: center;
+      gap: 6px;
+      margin-top: 12px;
+    }
+
+    .alert-badge {
+      background: rgba(255,255,255,0.08);
+      border: 1px solid rgba(255,255,255,0.15);
+      border-radius: 20px;
+      padding: 3px 10px;
+      font-size: 0.75rem;
+      color: #ccc;
+    }
+
+    /* History */
+    .section-title {
+      font-size: 0.8rem;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: #555;
+      margin-bottom: 10px;
+    }
+
+    .history-list {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+
+    .history-item {
+      background: #1a1a24;
+      border: 1px solid #2a2a3a;
+      border-radius: 10px;
+      padding: 12px 14px;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .history-dot {
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      flex-shrink: 0;
+    }
+
+    .dot-clear    { background: #4ade80; }
+    .dot-queue    { background: #f87171; }
+    .dot-security { background: #fb923c; }
+    .dot-warning  { background: #facc15; }
+    .dot-error    { background: #64748b; }
+    .dot-unknown  { background: #333; }
+
+    .history-info { flex: 1; min-width: 0; }
+
+    .history-msg {
+      font-size: 0.88rem;
+      color: #ccc;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .history-time {
+      font-size: 0.75rem;
+      color: #555;
+      margin-top: 2px;
+    }
+
+    .history-code {
+      font-size: 0.75rem;
+      color: #555;
+      flex-shrink: 0;
+    }
+
+    .empty-state {
+      text-align: center;
+      color: #444;
+      padding: 40px 0;
+      font-size: 0.9rem;
+    }
+
+    .auto-refresh {
+      text-align: center;
+      font-size: 0.75rem;
+      color: #444;
+      margin-top: 24px;
+      padding-bottom: 32px;
+    }
+  </style>
+</head>
+<body>
+
+<header>
+  <div style="font-size:1.4rem">&#x26A1;</div>
+  <h1>Pokemon Center Monitor</h1>
+  <button class="refresh-btn" onclick="load()">Refresh</button>
+</header>
+
+<div class="main">
+  <div id="status-card" class="status-card unknown">
+    <div class="status-icon" id="status-icon">&#x23F3;</div>
+    <div class="status-label" id="status-label">Loading...</div>
+    <div class="status-message" id="status-message">Fetching latest data</div>
+    <div class="status-time" id="status-time"></div>
+    <div class="alerts" id="status-alerts"></div>
+  </div>
+
+  <div class="section-title">Check History</div>
+  <div class="history-list" id="history-list">
+    <div class="empty-state">No checks recorded yet.</div>
+  </div>
+
+  <div class="auto-refresh" id="auto-refresh-msg">Auto-refreshes every 60 seconds</div>
+</div>
+
+<script>
+  const STATUS_META = {
+    clear:    { icon: "&#x2705;", label: "All Clear",       dotClass: "dot-clear" },
+    queue:    { icon: "&#x1F6A8;", label: "Queue Active",   dotClass: "dot-queue" },
+    security: { icon: "&#x26A0;&#xFE0F;", label: "Security Change", dotClass: "dot-security" },
+    warning:  { icon: "&#x26A0;&#xFE0F;", label: "Warning",         dotClass: "dot-warning" },
+    error:    { icon: "&#x274C;", label: "Error",           dotClass: "dot-error" },
+    unknown:  { icon: "&#x23F3;", label: "Unknown",         dotClass: "dot-unknown" },
+  };
+
+  function fmt(iso) {
+    if (!iso) return "never";
+    const d = new Date(iso);
+    return d.toLocaleString(undefined, {
+      month: "short", day: "numeric",
+      hour: "2-digit", minute: "2-digit", second: "2-digit"
+    });
+  }
+
+  function timeAgo(iso) {
+    if (!iso) return "";
+    const secs = Math.floor((Date.now() - new Date(iso)) / 1000);
+    if (secs < 60)  return `${secs}s ago`;
+    if (secs < 3600) return `${Math.floor(secs/60)}m ago`;
+    return `${Math.floor(secs/3600)}h ago`;
+  }
+
+  function load() {
+    fetch("status.json?t=" + Date.now())
+      .then(r => r.json())
+      .then(render)
+      .catch(() => {
+        document.getElementById("status-label").textContent = "Failed to load";
+        document.getElementById("status-message").textContent = "Could not fetch status.json";
+      });
+  }
+
+  function render(data) {
+    const s = data.current_status || "unknown";
+    const meta = STATUS_META[s] || STATUS_META.unknown;
+    const card = document.getElementById("status-card");
+
+    card.className = "status-card " + s;
+    document.getElementById("status-icon").innerHTML = meta.icon;
+    document.getElementById("status-label").textContent = meta.label;
+
+    const latest = data.checks && data.checks[0];
+    document.getElementById("status-message").textContent = latest ? latest.message : "No checks yet.";
+    document.getElementById("status-time").textContent = data.last_updated
+      ? "Last checked " + fmt(data.last_updated) + " (" + timeAgo(data.last_updated) + ")"
+      : "";
+
+    const alertsEl = document.getElementById("status-alerts");
+    alertsEl.innerHTML = "";
+    if (latest && latest.alerts && latest.alerts.length) {
+      latest.alerts.forEach(a => {
+        const b = document.createElement("span");
+        b.className = "alert-badge";
+        b.textContent = a;
+        alertsEl.appendChild(b);
+      });
+    }
+
+    const list = document.getElementById("history-list");
+    if (!data.checks || !data.checks.length) {
+      list.innerHTML = '<div class="empty-state">No checks recorded yet.</div>';
+      return;
+    }
+
+    list.innerHTML = data.checks.map(c => {
+      const m = STATUS_META[c.status] || STATUS_META.unknown;
+      return `
+        <div class="history-item">
+          <div class="history-dot ${m.dotClass}"></div>
+          <div class="history-info">
+            <div class="history-msg">${c.message}</div>
+            <div class="history-time">${fmt(c.timestamp)} &nbsp;·&nbsp; ${timeAgo(c.timestamp)}</div>
+          </div>
+          <div class="history-code">${c.http_code !== null && c.http_code !== undefined ? "HTTP " + c.http_code : ""}</div>
+        </div>`;
+    }).join("");
+  }
+
+  load();
+  setInterval(load, 60000);
+</script>
+</body>
+</html>

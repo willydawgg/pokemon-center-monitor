@@ -1,8 +1,12 @@
 import os
+import json
 import requests
+from datetime import datetime, timezone
 
 NTFY_TOPIC = os.environ.get("NTFY_TOPIC", "")
 TARGET_URL = "https://www.pokemoncenter.com/"
+STATUS_FILE = "docs/status.json"
+MAX_HISTORY = 100
 
 HEADERS = {
     "User-Agent": (
@@ -14,28 +18,15 @@ HEADERS = {
     "Accept-Language": "en-US,en;q=0.9",
 }
 
-# Queue-It signals — presence of any of these means a virtual queue is active
 QUEUE_SIGNALS = [
-    "queue-it.net",
-    "queueit",
-    "youarenext",
-    "queueid",
-    "waitingroom",
-    "waiting room",
+    "queue-it.net", "queueit", "youarenext",
+    "queueid", "waitingroom", "waiting room",
 ]
 
-# Cloudflare/bot-protection challenge signals — these indicate the site has
-# raised its security level beyond normal (challenge/under-attack mode)
 SECURITY_SIGNALS = [
-    "cf-browser-verification",
-    "checking your browser",
-    "ddos protection by cloudflare",
-    "enable javascript and cookies",
-    "cf_chl_opt",
-    "datadome",
-    "_pxcaptcha",
-    "perimeterx",
-    "access denied",
+    "cf-browser-verification", "checking your browser",
+    "ddos protection by cloudflare", "enable javascript and cookies",
+    "cf_chl_opt", "datadome", "_pxcaptcha", "perimeterx",
 ]
 
 
@@ -58,72 +49,86 @@ def notify(title, body, priority="high"):
         print(f"ntfy send failed: {e}")
 
 
+def load_history():
+    try:
+        with open(STATUS_FILE) as f:
+            return json.load(f)
+    except (FileNotFoundError, json.JSONDecodeError):
+        return {"current_status": "unknown", "last_updated": None, "checks": []}
+
+
+def save_history(data):
+    os.makedirs("docs", exist_ok=True)
+    with open(STATUS_FILE, "w") as f:
+        json.dump(data, f, indent=2)
+
+
+def record(result):
+    data = load_history()
+    data["checks"].insert(0, result)
+    data["checks"] = data["checks"][:MAX_HISTORY]
+    data["last_updated"] = result["timestamp"]
+    data["current_status"] = result["status"]
+    save_history(data)
+
+
 def check():
+    now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
     try:
         resp = requests.get(TARGET_URL, headers=HEADERS, timeout=20, allow_redirects=True)
     except requests.RequestException as e:
-        notify(
-            "Pokemon Center - Unreachable",
-            f"Could not connect: {e}",
-            priority="default",
-        )
+        msg = f"Could not connect: {e}"
+        notify("Pokemon Center - Unreachable", msg, priority="default")
+        record({"timestamp": now, "status": "error", "http_code": None, "message": msg, "alerts": []})
         return
 
-    status = resp.status_code
+    status_code = resp.status_code
     body = resp.text.lower()
     final_url = resp.url
 
-    print(f"Status: {status}  |  Final URL: {final_url}")
+    print(f"HTTP {status_code}  |  {final_url}")
 
-    # 1. Queue-It redirect (URL-level)
+    # Queue-It URL redirect
     if "queue-it.net" in final_url or "queueit" in final_url.lower():
-        notify(
-            "QUEUE ACTIVE - Pokemon Center",
-            f"Queue-It redirect detected. Get in line NOW!\n{TARGET_URL}",
-            priority="urgent",
-        )
+        msg = "Queue-It redirect detected. Virtual queue is LIVE."
+        notify("QUEUE ACTIVE - Pokemon Center", f"Get in line NOW!\n{TARGET_URL}", priority="urgent")
+        record({"timestamp": now, "status": "queue", "http_code": status_code, "message": msg, "alerts": ["queue-it redirect"]})
         return
 
-    # 2. Queue-It in page body
-    hits = [s for s in QUEUE_SIGNALS if s in body]
-    if hits:
-        notify(
-            "QUEUE ACTIVE - Pokemon Center",
-            f"Virtual queue detected ({', '.join(hits)}). Head to the site!\n{TARGET_URL}",
-            priority="urgent",
-        )
+    # Queue-It in page body
+    queue_hits = [s for s in QUEUE_SIGNALS if s in body]
+    if queue_hits:
+        msg = f"Virtual queue detected: {', '.join(queue_hits)}"
+        notify("QUEUE ACTIVE - Pokemon Center", f"{msg}\n{TARGET_URL}", priority="urgent")
+        record({"timestamp": now, "status": "queue", "http_code": status_code, "message": msg, "alerts": queue_hits})
         return
 
-    # 3. Security/bot-protection challenge page
+    # Bot-protection / security challenge
     sec_hits = [s for s in SECURITY_SIGNALS if s in body]
     if sec_hits:
-        notify(
-            "Security Change - Pokemon Center",
-            f"Bot-protection challenge active ({', '.join(sec_hits)}). "
-            f"Drop may be imminent.\n{TARGET_URL}",
-            priority="high",
-        )
+        msg = f"Security challenge active: {', '.join(sec_hits)}"
+        notify("Security Change - Pokemon Center", f"Drop may be imminent.\n{TARGET_URL}", priority="high")
+        record({"timestamp": now, "status": "security", "http_code": status_code, "message": msg, "alerts": sec_hits})
         return
 
-    # 4. 503 often precedes a drop (site going into queue mode)
-    if status == 503:
-        notify(
-            "503 - Pokemon Center",
-            f"Site returned 503 - may be ramping up for a drop.\n{TARGET_URL}",
-            priority="high",
-        )
+    # 503 often precedes a drop
+    if status_code == 503:
+        msg = "Site returned 503 — may be preparing for a drop."
+        notify("503 - Pokemon Center", f"{msg}\n{TARGET_URL}", priority="high")
+        record({"timestamp": now, "status": "security", "http_code": 503, "message": msg, "alerts": ["503"]})
         return
 
-    # 5. Any other unexpected status
-    if status not in (200, 301, 302, 304):
-        notify(
-            f"Unexpected Status {status} - Pokemon Center",
-            f"HTTP {status} received. Worth checking.\n{TARGET_URL}",
-            priority="default",
-        )
+    # Any other unexpected status
+    if status_code not in (200, 301, 302, 304):
+        msg = f"Unexpected HTTP {status_code}"
+        notify(f"Status {status_code} - Pokemon Center", f"{msg}\n{TARGET_URL}", priority="default")
+        record({"timestamp": now, "status": "warning", "http_code": status_code, "message": msg, "alerts": [str(status_code)]})
         return
 
-    print("No queue or security changes detected. All clear.")
+    # All clear
+    print("All clear.")
+    record({"timestamp": now, "status": "clear", "http_code": status_code, "message": "No changes detected. All clear.", "alerts": []})
 
 
 if __name__ == "__main__":
