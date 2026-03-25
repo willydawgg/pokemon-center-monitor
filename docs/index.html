@@ -1,0 +1,335 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Pokemon TCG Stock Monitor</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg: #0e0e14;
+      --surface: #17171f;
+      --border: #252530;
+      --text: #e2e2e8;
+      --muted: #6b6b80;
+      --green: #4ade80;
+      --green-bg: #0d2b1a;
+      --green-border: #1a5c30;
+      --red: #f87171;
+      --red-bg: #2b0d0d;
+      --amber: #fb923c;
+      --amber-bg: #2b1700;
+      --blue: #60a5fa;
+    }
+
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      min-height: 100vh;
+      font-size: 15px;
+    }
+
+    /* Header */
+    header {
+      background: var(--surface);
+      border-bottom: 1px solid var(--border);
+      padding: 14px 16px;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      position: sticky;
+      top: 0;
+      z-index: 10;
+    }
+    header h1 { font-size: 1rem; font-weight: 600; flex: 1; }
+    #last-updated { font-size: 0.72rem; color: var(--muted); }
+    .refresh-btn {
+      background: var(--border);
+      border: 1px solid #333340;
+      color: var(--muted);
+      padding: 5px 12px;
+      border-radius: 6px;
+      cursor: pointer;
+      font-size: 0.8rem;
+    }
+    .refresh-btn:hover { color: var(--text); }
+
+    /* Layout */
+    .page { max-width: 700px; margin: 0 auto; padding: 16px; }
+
+    /* Alerts banner */
+    #alerts-section { margin-bottom: 20px; }
+    .section-label {
+      font-size: 0.72rem;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: var(--muted);
+      margin-bottom: 8px;
+    }
+    .alert-item {
+      background: var(--green-bg);
+      border: 1px solid var(--green-border);
+      border-radius: 10px;
+      padding: 12px 14px;
+      margin-bottom: 6px;
+      display: flex;
+      gap: 10px;
+      align-items: flex-start;
+    }
+    .alert-icon { font-size: 1.1rem; flex-shrink: 0; margin-top: 1px; }
+    .alert-body { flex: 1; min-width: 0; }
+    .alert-product {
+      font-size: 0.88rem;
+      font-weight: 500;
+      color: var(--green);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .alert-meta { font-size: 0.75rem; color: var(--muted); margin-top: 2px; }
+    .alert-price { font-size: 0.8rem; color: var(--text); font-weight: 500; }
+    .no-alerts { color: var(--muted); font-size: 0.85rem; padding: 8px 0; }
+
+    /* Retailer cards */
+    .retailers-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 10px;
+      margin-bottom: 20px;
+    }
+    @media (max-width: 480px) {
+      .retailers-grid { grid-template-columns: 1fr; }
+    }
+
+    .retailer-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      overflow: hidden;
+    }
+    .retailer-header {
+      padding: 12px 14px 10px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      border-bottom: 1px solid var(--border);
+    }
+    .retailer-name { font-weight: 600; font-size: 0.9rem; flex: 1; }
+    .status-dot {
+      width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0;
+    }
+    .dot-ok { background: var(--green); }
+    .dot-error { background: var(--red); }
+    .dot-pending { background: var(--muted); }
+    .stock-count {
+      font-size: 0.75rem;
+      color: var(--muted);
+    }
+    .stock-count.has-stock { color: var(--green); font-weight: 600; }
+
+    .product-list { padding: 8px 0; max-height: 220px; overflow-y: auto; }
+    .product-item {
+      padding: 7px 14px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      border-bottom: 1px solid var(--border);
+    }
+    .product-item:last-child { border-bottom: none; }
+    .product-stock-dot {
+      width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0;
+    }
+    .product-info { flex: 1; min-width: 0; }
+    .product-name {
+      font-size: 0.8rem;
+      color: var(--text);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .product-name a { color: inherit; text-decoration: none; }
+    .product-name a:hover { color: var(--blue); }
+    .product-price { font-size: 0.75rem; color: var(--muted); margin-top: 1px; }
+    .no-products { padding: 16px 14px; font-size: 0.82rem; color: var(--muted); }
+
+    .show-all-btn {
+      display: block;
+      width: 100%;
+      background: none;
+      border: none;
+      border-top: 1px solid var(--border);
+      color: var(--muted);
+      font-size: 0.75rem;
+      padding: 8px;
+      cursor: pointer;
+      text-align: center;
+    }
+    .show-all-btn:hover { color: var(--text); background: rgba(255,255,255,0.02); }
+
+    .retailer-checked { font-size: 0.7rem; color: var(--muted); padding: 6px 14px 8px; }
+
+    .footer { text-align: center; font-size: 0.72rem; color: var(--muted); padding: 12px 0 32px; }
+  </style>
+</head>
+<body>
+
+<header>
+  <span style="font-size:1.3rem">&#x26A1;</span>
+  <h1>Pokemon TCG Stock Monitor</h1>
+  <span id="last-updated"></span>
+  <button class="refresh-btn" onclick="load()">Refresh</button>
+</header>
+
+<div class="page">
+  <div id="alerts-section">
+    <div class="section-label">Recent Restocks</div>
+    <div id="alerts-list"><div class="no-alerts">No restocks detected yet.</div></div>
+  </div>
+
+  <div class="section-label">Retailers</div>
+  <div class="retailers-grid" id="retailers-grid"></div>
+
+  <div class="footer" id="footer">Auto-refreshes every 60s</div>
+</div>
+
+<script>
+  const RETAILER_ORDER = ["smyths", "argos", "asda", "sportsdirect"];
+
+  function timeAgo(iso) {
+    if (!iso) return "";
+    const s = Math.floor((Date.now() - new Date(iso)) / 1000);
+    if (s < 60) return `${s}s ago`;
+    if (s < 3600) return `${Math.floor(s / 60)}m ago`;
+    if (s < 86400) return `${Math.floor(s / 3600)}h ago`;
+    return `${Math.floor(s / 86400)}d ago`;
+  }
+
+  function fmt(iso) {
+    if (!iso) return "never";
+    return new Date(iso).toLocaleString("en-GB", {
+      day: "numeric", month: "short",
+      hour: "2-digit", minute: "2-digit"
+    });
+  }
+
+  function esc(str) {
+    return String(str).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");
+  }
+
+  function renderAlerts(alerts) {
+    const el = document.getElementById("alerts-list");
+    if (!alerts || !alerts.length) {
+      el.innerHTML = '<div class="no-alerts">No restocks detected yet.</div>';
+      return;
+    }
+    el.innerHTML = alerts.slice(0, 10).map(a => `
+      <div class="alert-item">
+        <div class="alert-icon">&#x1F7E2;</div>
+        <div class="alert-body">
+          <div class="alert-product">
+            ${a.url ? `<a href="${esc(a.url)}" target="_blank" rel="noopener">${esc(a.product)}</a>` : esc(a.product)}
+          </div>
+          <div class="alert-meta">
+            <span>${esc(a.retailer)}</span>
+            ${a.price ? ` &nbsp;·&nbsp; <span class="alert-price">${esc(a.price)}</span>` : ""}
+            &nbsp;·&nbsp; <span>${fmt(a.timestamp)} (${timeAgo(a.timestamp)})</span>
+          </div>
+        </div>
+      </div>`).join("");
+  }
+
+  function renderRetailers(retailers) {
+    const grid = document.getElementById("retailers-grid");
+    grid.innerHTML = "";
+
+    const keys = RETAILER_ORDER.filter(k => retailers[k]).concat(
+      Object.keys(retailers).filter(k => !RETAILER_ORDER.includes(k))
+    );
+
+    keys.forEach(key => {
+      const r = retailers[key];
+      const products = r.products || [];
+      const inStock = products.filter(p => p.in_stock);
+      const outOfStock = products.filter(p => !p.in_stock);
+      const isError = r.status === "error";
+      const INITIAL_SHOW = 5;
+
+      const card = document.createElement("div");
+      card.className = "retailer-card";
+
+      let productRows = [...inStock, ...outOfStock].map(p => `
+        <div class="product-item">
+          <div class="product-stock-dot" style="background:${p.in_stock ? 'var(--green)' : 'var(--muted)'}"></div>
+          <div class="product-info">
+            <div class="product-name">
+              ${p.url ? `<a href="${esc(p.url)}" target="_blank" rel="noopener">${esc(p.name)}</a>` : esc(p.name)}
+            </div>
+            ${p.price ? `<div class="product-price">${esc(p.price)}</div>` : ""}
+          </div>
+        </div>`).join("");
+
+      const hasMore = products.length > INITIAL_SHOW;
+      let showingAll = false;
+
+      card.innerHTML = `
+        <div class="retailer-header">
+          <div class="status-dot ${isError ? 'dot-error' : products.length ? 'dot-ok' : 'dot-pending'}"></div>
+          <div class="retailer-name">${esc(r.name)}</div>
+          <div class="stock-count ${inStock.length > 0 ? 'has-stock' : ''}">
+            ${isError ? 'Error' : inStock.length > 0 ? `${inStock.length} in stock` : 'None in stock'}
+          </div>
+        </div>
+        <div class="product-list" id="products-${key}">
+          ${products.length === 0
+            ? `<div class="no-products">${isError ? 'Failed to check — will retry next run.' : 'No products found.'}</div>`
+            : productRows
+          }
+        </div>
+        ${hasMore ? `<button class="show-all-btn" id="toggle-${key}">Show all ${products.length}</button>` : ''}
+        <div class="retailer-checked">
+          Checked <a href="${esc(r.url)}" target="_blank" rel="noopener" style="color:inherit">${esc(r.name)}</a>
+          &nbsp;·&nbsp; ${fmt(r.last_checked)} (${timeAgo(r.last_checked)})
+        </div>`;
+
+      grid.appendChild(card);
+
+      // Collapse to first N items initially
+      if (hasMore) {
+        const listEl = card.querySelector(`#products-${key}`);
+        const allItems = listEl.querySelectorAll(".product-item");
+        allItems.forEach((el, i) => { if (i >= INITIAL_SHOW) el.style.display = "none"; });
+
+        card.querySelector(`#toggle-${key}`).addEventListener("click", function () {
+          showingAll = !showingAll;
+          allItems.forEach((el, i) => {
+            if (i >= INITIAL_SHOW) el.style.display = showingAll ? "" : "none";
+          });
+          this.textContent = showingAll ? "Show less" : `Show all ${products.length}`;
+        });
+      }
+    });
+  }
+
+  function load() {
+    fetch("status.json?t=" + Date.now())
+      .then(r => r.json())
+      .then(data => {
+        document.getElementById("last-updated").textContent =
+          data.last_updated ? `Updated ${timeAgo(data.last_updated)}` : "";
+        renderAlerts(data.alerts || []);
+        renderRetailers(data.retailers || {});
+      })
+      .catch(err => {
+        console.error(err);
+        document.getElementById("footer").textContent = "Failed to load status.json";
+      });
+  }
+
+  load();
+  setInterval(load, 60000);
+</script>
+</body>
+</html>
